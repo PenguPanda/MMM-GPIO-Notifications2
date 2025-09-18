@@ -4,6 +4,6 @@
   "description": "Extended GPIO notifications for MagicMirror²",
   "main": "MMM-GPIO-Notifications2.js",
   "dependencies": {
-    "pigpio-client": "^1.0.5"
+    "pigpio-client": "^1.5.2"
   }
 }
