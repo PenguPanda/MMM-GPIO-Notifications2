@@ -1,158 +1,89 @@
 # MMM-GPIO-Notifications2
 
-A [MagicMirror²](https://magicmirror.builders) module for Raspberry Pi that listens to GPIO pins and sends configurable notifications.  
-Supports **buttons** (short/long/very long/double/triple presses) and **PIR motion sensors**, with flexible debounce, suppression, and custom payloads.
+A [MagicMirror²](https://github.com/MagicMirrorOrg/MagicMirror) module that listens to GPIO pins on a Raspberry Pi using [pigpio](https://abyz.me.uk/rpi/pigpio/) and triggers notifications.
+
+Supports:
+- PIR sensors
+- Button presses (short, long, very long, double, triple)
 
 ---
 
-## ✨ Features
-- Button press detection with:
-  - **ShortPress**
-  - **LongPress**
-  - **VeryLongPress**
-  - **DoublePress**
-  - **TriplePress**
-- PIR motion sensor support:
-  - `motionStart`
-  - `motionEnd`
-- Per-pin configuration
-- Built-in support for pull-up / pull-down resistors
-- Configurable debounce time
-- Suppression rules (e.g., skip shortPress if longPress triggered)
-- Send notifications with **custom payloads**
+## Installation
 
----
-
-## 📦 Installation
-
-1. Navigate to your MagicMirror `modules` folder:
-   ```bash
-   cd ~/MagicMirror/modules
-
-    Clone this repository:
-
-git clone https://github.com/PenguPanda/MMM-GPIO-Notifications2.git
-
-Install dependencies:
-
+```bash
+cd ~/MagicMirror/modules
+git clone https://github.com/YOURNAME/MMM-GPIO-Notifications2.git
 cd MMM-GPIO-Notifications2
 npm install
 
 Make sure pigpiod is running:
 
-    sudo systemctl enable pigpiod
-    sudo systemctl start pigpiod
+sudo systemctl enable pigpiod
+sudo systemctl start pigpiod
 
-⚙️ Configuration
-
-Add this to your config.js:
+Configuration
 
 {
   module: "MMM-GPIO-Notifications2",
   config: {
+    host: "127.0.0.1",
+    port: 8888,
     pins: [
       {
         pin: 24,
-        mode: "button",            // "button" or "pir"
-        pull: "down",              // "up" or "down"
-        activeLow: false,          // true if button/sensor pulls LOW
-        debounce: 80,              // ms debounce
-        longPressDuration: 2000,   // ms
-        veryLongPressDuration: 10000,
-        multiPressTimeout: 400,    // ms for double/triple
-        suppressShortOnLong: true,
-        suppressReleaseOnLong: true,
-        suppressReleaseOnVeryLong: true,
-
+        type: "BUTTON",
+        pull: "down",
+        debounce: 80,
+        longPress: 2500,
+        veryLongPress: 6000,
+        doublePress: 400,
+        triplePress: 600,
         notifications: {
-          press: ["PRESS"],
-          release: ["RELEASE"],
-          shortPress: [
-            "SHORT_PRESS",
-            { name: "SCREEN_TOGGLE", payload: { target: "hdmi" } }
-          ],
-          longPress: [
-            "LONG_PRESS",
-            { name: "FRAMELIGHT_OFF", payload: { action: "off" } }
-          ],
-          veryLongPress: [
-            { name: "SHUTDOWN", payload: { confirm: true } }
-          ],
-          doublePress: [
-            "DOUBLE_PRESS",
-            { name: "NEXT_PAGE" }
-          ],
-          triplePress: [
-            { name: "RESET_VIEW" }
-          ]
-        }
+          shortPress: "BUTTON_SHORT",
+          longPress: "BUTTON_LONG",
+          veryLongPress: "BUTTON_VERYLONG",
+          doublePress: "BUTTON_DOUBLE",
+          triplePress: "BUTTON_TRIPLE"
+        },
+        payload: { name: "Button A" }
       },
       {
         pin: 17,
-        mode: "pir",                // motion sensor
-        pull: "down",               // most PIRs idle HIGH
-        activeLow: false,           // true if PIR pulls LOW when triggered
-        debounce: 200,              // PIRs often need longer debounce
-
+        type: "PIR",
+        pull: "down",
+        debounce: 10000,
         notifications: {
-          motionStart: [
-            "MOTION_DETECTED",
-            { name: "SCREEN_ON", payload: { forced: false } }
-          ],
-          motionEnd: [
-            "MOTION_ENDED",
-            { name: "SCREEN_OFF", payload: { room: "livingroom" } }
-          ]
-        }
+          motionOn: "MOTION_DETECTED",
+          motionOff: "MOTION_ENDED"
+        },
+        payload: { location: "Living Room" }
       }
     ]
   }
 }
 
-🔌 Wiring
-Button Example
+Notifications
 
-Simple push button connected to GPIO24 with pull-down resistor.
+This module will send the following notifications:
 
- Raspberry Pi GPIO (BCM)
- ┌─────────────┐
- │ 3.3V    (1) │───┐
- │             │   │
- │ GPIO24 (18) │───┴─── Button ─── GND (6)
- │             │
- └─────────────┘
+    From Buttons:
 
-    Configure pull: "down" in config
+        shortPress → BUTTON_SHORT
 
-    Pressing the button connects 3.3V → GPIO24, reading as HIGH
+        longPress → BUTTON_LONG
 
-PIR Motion Sensor Example (HC-SR501 style)
+        veryLongPress → BUTTON_VERYLONG
 
-  PIR Sensor         Raspberry Pi
- ┌─────────────┐    ┌─────────────┐
- │ VCC   ──────┼───▶ 5V (Pin 2)   │
- │ GND   ──────┼───▶ GND (Pin 6)  │
- │ OUT   ──────┼───▶ GPIO17 (Pin 11)
- └─────────────┘    └─────────────┘
+        doublePress → BUTTON_DOUBLE
 
-    Most PIRs idle HIGH and go LOW on motion (set activeLow accordingly)
+        triplePress → BUTTON_TRIPLE
 
-    Use debounce: 200 or higher to reduce false triggers
+    From PIR Sensors:
 
-    Adjust hardware dials (time_high, sensitivity) for your needs
+        motionOn → MOTION_DETECTED
 
-🔧 Notes
+        motionOff → MOTION_ENDED
 
-    GPIO permissions: If you get errors, run MagicMirror with sudo or ensure the pigpiod daemon is active.
+License
 
-    PIR sensors: Some PIRs have hardware dials for time_high and sensitivity — adjust them if motion triggers only once.
-
-    Debounce: Increase debounce for noisy sensors (e.g., PIRs) to avoid false triggers.
-
-🤝 Contributing
-
-Pull requests are welcome!
-If you add new features (e.g., analog sensors or advanced press combos), please open an issue or PR.
-📜 License
-
-MIT License.
+MIT © PenguPanda

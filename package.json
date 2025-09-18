@@ -1,9 +1,14 @@
 {
-  "name": "MMM-GPIO-Notifications2",
+  "name": "mmm-gpio-notifications2",
   "version": "1.0.0",
-  "description": "Extended GPIO notifications for MagicMirror²",
+  "description": "MagicMirror² module for triggering notifications from GPIO buttons and PIR sensors via pigpio.",
   "main": "MMM-GPIO-Notifications2.js",
+  "scripts": {
+    "start": "echo 'This module runs inside MagicMirror²'"
+  },
+  "author": "Your Name",
+  "license": "MIT",
   "dependencies": {
-    "pigpio-client": "^1.5.2"
+    "pigpio-client": "^1.5.1"
   }
 }
