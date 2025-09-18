@@ -1,222 +1,158 @@
-# MMM-GPIO-Notifications
+# MMM-GPIO-Notifications2
 
-MMM-GPIO-Notifications is a module for the [MagicMirror](https://github.com/MichMich/MagicMirror) project by [Michael Teeuw](https://github.com/MichMich).
+A [MagicMirror²](https://magicmirror.builders) module for Raspberry Pi that listens to GPIO pins and sends configurable notifications.  
+Supports **buttons** (short/long/very long/double/triple presses) and **PIR motion sensors**, with flexible debounce, suppression, and custom payloads.
 
-It watches the state of configurable GPIO-Pins and sends configurable notifications (with optional payload) if the state of the pins change to the configured value. If you configure a delay no notifcations will be send for the pin after a successful trigger for this time.
-As a new feature you can now set profiles for each notifcation. Because of this you can use the same sensor for different actions in different profiles (i.e. different pages).
+---
 
-As of version 0.1.0 of the module it is possible to use rotary encoders, too. Instead of one pin, two pins get configured (one data and one clock pin) which work together.
+## ✨ Features
+- Button press detection with:
+  - **ShortPress**
+  - **LongPress**
+  - **VeryLongPress**
+  - **DoublePress**
+  - **TriplePress**
+- PIR motion sensor support:
+  - `motionStart`
+  - `motionEnd`
+- Per-pin configuration
+- Built-in support for pull-up / pull-down resistors
+- Configurable debounce time
+- Suppression rules (e.g., skip shortPress if longPress triggered)
+- Send notifications with **custom payloads**
 
-As with version 0.2.0 of the module i needed to change to a different library and so the `gpio_debounce` option is no longer supported. Use the delay options instead!
+---
 
-**If the module is unable to register a GPIO i.e. cause it is used by a other program it prints a message to the log now.**
+## 📦 Installation
 
-**I wrote an [english](https://www.github.com/Tom-Hirschberger/MMM-GPIO-Notifications/tree/master/examples%2FHC-SR501%2FHC-SR501-GPIO4-README-EN.md) and an [german](https://www.github.com/Tom-Hirschberger/MMM-GPIO-Notifications/tree/master/examples%2FHC-SR501%2FHC-SR501-GPIO4-README-DE.md) tutorial on howto connect an HC-SR501 PIR sensor and use this module in combination with [MMM-Screen-Powersave-Notifications](https://github.com/Tom-Hirschberger/MMM-Screen-Powersave-Notification) to implement an auto-on/auto-off for the screen**
+1. Navigate to your MagicMirror `modules` folder:
+   ```bash
+   cd ~/MagicMirror/modules
 
-## Installation
+    Clone this repository:
 
-Hint: The postinstallation will take some time. Please wait for it to finish!
-Hint: If you use the module in a container (i.e. docker) setup please skip this steps and make sure to look to the next section and then run these steps if the preconditions are met.
+git clone https://github.com/PenguPanda/MMM-GPIO-Notifications2.git
 
-```bash
-    cd ~/MagicMirror/modules
-    git clone https://github.com/Tom-Hirschberger/MMM-GPIO-Notifications.git
-    cd MMM-GPIO-Notifications
-    ./preinstall
-    npm install
-```
+Install dependencies:
 
-## Setup in a container
+cd MMM-GPIO-Notifications2
+npm install
 
-As of version 0.2.0 of the module you will need a container image which contains the "lipgpiod-dev" and "gpiod" package. The installation will fail if they are not present!
+Make sure pigpiod is running:
 
-The image of karsten13 will contains with all releases after 2024-03-24. You will need the fat tag to install the module and run the converter script proberly. 
+    sudo systemctl enable pigpiod
+    sudo systemctl start pigpiod
 
-If you want to use the module within a container it will need some preperation.
-First make sure `python3` is available in the container. It is needed only during the installation (`npm install`) of the module but not during runtime.
+⚙️ Configuration
 
-If you use the container image of `karsten13` you need to switch from the `latest` tag to the `fat`.
+Add this to your config.js:
 
-If you use `docker-compose` you will find a line:
+{
+  module: "MMM-GPIO-Notifications2",
+  config: {
+    pins: [
+      {
+        pin: 24,
+        mode: "button",            // "button" or "pir"
+        pull: "down",              // "up" or "down"
+        activeLow: false,          // true if button/sensor pulls LOW
+        debounce: 80,              // ms debounce
+        longPressDuration: 2000,   // ms
+        veryLongPressDuration: 10000,
+        multiPressTimeout: 400,    // ms for double/triple
+        suppressShortOnLong: true,
+        suppressReleaseOnLong: true,
+        suppressReleaseOnVeryLong: true,
 
-```yaml
-image: karsten13/magicmirror:latest
-```
-
-in the `docker-compose.yml" file. Please change it to:
-
-```yaml
-image: karsten13/magicmirror:fat
-```
-
-Next you will need to make sure that you map `/dev` and `sys` inside the container and run the container in privileged mode.
-
-If you started the container without `docker-compose` simply add the following options to the command `docker run` command:
-
-```bash
--v /dev:/dev -v /sys:/sys --privileged
-```
-
-It then will look something like:
-
-```bash
-docker run --privileged -it --rm --name mymirror \
- -v ${HOME}/mm/modules:/opt/magic_mirror/modules \
- -v ${HOME}/mm/config:/opt/magic_mirror/config \
- -v ${HOME}/mm/css:/opt/magic_mirror/css \
- -v /dev:/dev \
- -v /sys:/sys \
- -p 8080:8080 \
- karsten13/magicmirror:fat npm run server
-```
-
-In case you use `docker-compose` to start your mirror you need to add a additional volume and the privileged option to the `docker-compose.yml`.
-It then will look something like:
-
-```yaml
-version: '3'
-
-services:
-  magicmirror:
-    container_name: mm
-    privileged: true
-    image: karsten13/magicmirror:latest
-    ports:
-      - "8080:8080"
-    volumes:
-      - ../mounts/config:/opt/magic_mirror/config
-      - ../mounts/modules:/opt/magic_mirror/modules
-      - ../mounts/css:/opt/magic_mirror/css
-      - /dev:/dev
-      - /sys:/sys
-    restart: unless-stopped
-    command:
-      - npm
-      - run
-      - server
-
-```
-
-## Configuration
-
-As of version 0.1.0 of the module rotary encoders can be used. The configuration is slightly different between single pins and the one for rotary encoders. Cause of this i will provide two examples in two sections of this readme.
-
-### General
-
-* `forceInfoFileUsage`: If this option is set to true the `gpioinfo.json` file will be used instead of build in device information. If the registration of your pins fails although you are sure you configured the right ones you can try to change this option. Default: `false`
-
-### Single GPIO pin
-
-To use the module insert it in the config.js file. Here is an example:
-
-```json5
-    {
-        module: 'MMM-GPIO-Notifications',
-        config: {
-            '17': {
-              delay: 1000,
-              notifications_high: [
-                {
-                  notification: 'USER_PRESENCE',
-                  payload: true
-                },
-                {
-                  notification: 'SCREEN_ON',
-                  payload: { 'forced': false }
-                }
-              ]
-            },
-            '4': {
-              delay: 20,
-              notifications_high: [
-                {
-                  notification: 'SCREEN_TOGGLE',
-                  payload: { 'forced': true },
-                  profiles: 'pageOneEveryone pageTwoEveryone'
-                }
-              ]
-            }
+        notifications: {
+          press: ["PRESS"],
+          release: ["RELEASE"],
+          shortPress: [
+            "SHORT_PRESS",
+            { name: "SCREEN_TOGGLE", payload: { target: "hdmi" } }
+          ],
+          longPress: [
+            "LONG_PRESS",
+            { name: "FRAMELIGHT_OFF", payload: { action: "off" } }
+          ],
+          veryLongPress: [
+            { name: "SHUTDOWN", payload: { confirm: true } }
+          ],
+          doublePress: [
+            "DOUBLE_PRESS",
+            { name: "NEXT_PAGE" }
+          ],
+          triplePress: [
+            { name: "RESET_VIEW" }
+          ]
         }
-    },
-```
+      },
+      {
+        pin: 17,
+        mode: "pir",                // motion sensor
+        pull: "down",               // most PIRs idle HIGH
+        activeLow: false,           // true if PIR pulls LOW when triggered
+        debounce: 200,              // PIRs often need longer debounce
 
-There are two buttons configured in this example.
-As of version 0.0.8 of the module it is possible to send specific notifications for both states of the the pin. Instead of specifying `gpio_state` and `notifications` the two arrays `notifications_low` and `notifications_high` are used. In the example above both gpio pins cause notifications being send if high state is triggered.
-
-As of version 0.0.9 of the module the old syntax using `gpio_state` and `notifications` is depcreated. Use `notifications_low` and `notifications_high` instead!
-
-As of version 0.0.9 of the module it is possible to configure different delays depending on the state with the options `delay_high` and `delay_low`. If only `delay` is configured it will be used for both the high and the low state.
-
-| Option        | Description                                                                                                                                               | Type    | Default |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
-| THE_KEY       | the number of the pin you want to watch. MAKE SURE TO ADD IT IN ''                                                                                        | String  |         |
-| gpio_state    | DEPRECATED! The state of the gpio pin on which the notifications should be send. Use `notification_low` and `notifications_high` instead.                                                                                       | Integer |         |
-| delay         | time in milliseconds till the notifications will be send again altough the pin has been triggered. | Integer | 0 |
-| delay_low         | time in milliseconds till the notifications of the low state will be send again after it got triggered. | Integer | the value of `delay` |
-| delay_high         | time in milliseconds till the notifications of the high state will be send again after it got triggered. | Integer | the value of `delay` |
-| notifications | DEPRECATED! An array of natifications. Each notification needs a key "notification", the payload is optional. Also a optional profile string can be set. Use `notification_low` and `notifications_high` instead. | Array |
-| notifications_low | Instead of the use of `gpio_state` this array of notifications can be used to send specific notifications if the low state of the pin is triggered. | Array |
-| notifications_high | Instead of the use of `gpio_state` this array of notifications can be used to send specific notifications if the high state of the pin is triggered. | Array |
-
-### Rotary encoder
-
-```json5
-    {
-        module: 'MMM-GPIO-Notifications',
-        config: {
-          '13': {
-              delay: 500,
-              notifications_high: [
-                {
-                  notification: 'SCREEN_TOGGLE',
-                  payload: { 'forced': true }
-                }
-              ]
-          },
-          '6,5': {
-            delay_cw: 100,
-            delay_ccw: 200,
-            rotaryDelay: 5,
-            notifications_ccw: [
-              {
-                notification: 'PROFILE_INCREMENT_HORIZONTAL',
-                payload: true,
-              },
-              {
-                notification: 'TEST',
-                payload: false,
-                profiles: "pageC"
-              }
-            ],
-            notifications_cw: [
-              {
-                notification: 'PROFILE_DECREMENT_HORIZONTAL',
-                payload: true,
-              }
-            ],
-          },
+        notifications: {
+          motionStart: [
+            "MOTION_DETECTED",
+            { name: "SCREEN_ON", payload: { forced: false } }
+          ],
+          motionEnd: [
+            "MOTION_ENDED",
+            { name: "SCREEN_OFF", payload: { room: "livingroom" } }
+          ]
         }
-    },
-```
+      }
+    ]
+  }
+}
 
-In this example a rotary encoder with the following options is configured:
+🔌 Wiring
+Button Example
 
-* the switch pin of my rotary encoder is GPIO 13
-* if the rotary encoder gets pressed my screen gets toggled by notification "SCREEN_TOGGLE"
-* the data pin of the rotary encoder is GPIO 6
-* the clock pin of the rotary encoder is GPIO 5
-* notifications for clockwise direction will be send only after a delay of 100 milliseconds
-* notifications for counterclockwise direction will be send only after a delay of 200 milliseconds
-* my rotary encoder sometimes sends results twice within a short time when it is turned. So i set a small amount of 5 milliseconds as delay between two events
-* if the rotary is turned counterclockwise two notifications are send: "PROFILE_INCREMENT_HORIZONTAL" and "TEST". But "TEST" is only send on my center profile "pageC"
-* if the rotary is turned clockwise the notification "PROFILE_DECREMENT_HORIZONTAL" is send
+Simple push button connected to GPIO24 with pull-down resistor.
 
-| Option        | Description                                                                                                                                               | Type    | Default |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
-| THE_KEY       | the number of the pin you want to watch. MAKE SURE TO ADD IT IN ''                                                                                        | String  |         |
-| delay         | time in milliseconds till the notifications will be send again altough the rotary has been turned (either clockwise or counterclockwise). | Integer | 0 |
-| delay_cw         | time in milliseconds till the notifications of the rotary will be send again after it got turned clockwise. | Integer | the value of `delay` |
-| delay_ccw         | time in milliseconds till the notifications of the rotary will be send again after it got turned counterclockwise. | Integer | the value of `delay` |
-| rotaryDelay         | time in milliseconds till the notifications of the rotary will be send again after it got turned independent of the direction | Integer | the value of `delay` |
-| notifications_cw | A array of notifications that should be send if the rotary has been turned clockwise. | Array |
-| notifications_ccw | A array of notifications that should be send if the rotary has been turned counterclockwise. | Array |
+ Raspberry Pi GPIO (BCM)
+ ┌─────────────┐
+ │ 3.3V    (1) │───┐
+ │             │   │
+ │ GPIO24 (18) │───┴─── Button ─── GND (6)
+ │             │
+ └─────────────┘
+
+    Configure pull: "down" in config
+
+    Pressing the button connects 3.3V → GPIO24, reading as HIGH
+
+PIR Motion Sensor Example (HC-SR501 style)
+
+  PIR Sensor         Raspberry Pi
+ ┌─────────────┐    ┌─────────────┐
+ │ VCC   ──────┼───▶ 5V (Pin 2)   │
+ │ GND   ──────┼───▶ GND (Pin 6)  │
+ │ OUT   ──────┼───▶ GPIO17 (Pin 11)
+ └─────────────┘    └─────────────┘
+
+    Most PIRs idle HIGH and go LOW on motion (set activeLow accordingly)
+
+    Use debounce: 200 or higher to reduce false triggers
+
+    Adjust hardware dials (time_high, sensitivity) for your needs
+
+🔧 Notes
+
+    GPIO permissions: If you get errors, run MagicMirror with sudo or ensure the pigpiod daemon is active.
+
+    PIR sensors: Some PIRs have hardware dials for time_high and sensitivity — adjust them if motion triggers only once.
+
+    Debounce: Increase debounce for noisy sensors (e.g., PIRs) to avoid false triggers.
+
+🤝 Contributing
+
+Pull requests are welcome!
+If you add new features (e.g., analog sensors or advanced press combos), please open an issue or PR.
+📜 License
+
+MIT License.
