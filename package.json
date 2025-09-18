@@ -1,28 +1,9 @@
 {
-  "name": "MMM-GPIO-Notifications",
-  "version": "0.2.9",
-  "description": "A module which sends notications based on GPIO events.",
-  "main": "MMM-GPIO-Notifications.js",
-  "devDependencies": {},
-  "scripts": {
-    "preinstall": "./preinstall"
-  },
+  "name": "MMM-GPIO-Notifications2",
+  "version": "1.0.0",
+  "description": "Extended GPIO notifications for MagicMirror²",
+  "main": "MMM-GPIO-Notifications2.js",
   "dependencies": {
-    "opengpio": "~1.0.13"
-  },
-  "keywords": [
-    "MagicMirror",
-    "MM",
-    "GPIO"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git@github.com:Tom-Hirschberger/MMM-GPIO-Notifications.git"
-  },
-  "author": "Thomas Hirschberger",
-  "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/Tom-Hirschberger/MMM-GPIO-Notifications/issues"
-  },
-  "homepage": "https://github.com/Tom-Hirschberger/MMM-GPIO-Notifications/#readme"
+    "pigpio-client": "^1.0.5"
+  }
 }
