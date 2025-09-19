@@ -7,7 +7,6 @@ const pigpio = require("pigpio-client");
 
 module.exports = NodeHelper.create({
   start: function () {
-    this.clients = {};
     this.log("Starting node_helper for module [" + this.name + "]");
   },
 
@@ -21,12 +20,11 @@ module.exports = NodeHelper.create({
   setupGPIO: function () {
     const { host, port, pins } = this.config;
 
-    this.log("[MMM-GPIO-Notifications2] Attempting to connect to pigpiod…");
+    this.log("[MMM-GPIO-Notifications2] Connecting to pigpiod…");
     this.client = pigpio.pigpio({ host, port });
 
     this.client.once("connected", (info) => {
       this.log("[MMM-GPIO-Notifications2] Connected to pigpiod:", info);
-      this.log("[MMM-GPIO-Notifications2] Setting up pins…");
 
       pins.forEach((pinConfig) => {
         this.setupPin(pinConfig);
@@ -41,130 +39,151 @@ module.exports = NodeHelper.create({
   setupPin: function (pinConfig) {
     const gpio = this.client.gpio(pinConfig.pin);
 
-    // Apply pull-up/down (0=OFF, 1=DOWN, 2=UP)
-    if (pinConfig.pull === "up") {
-      gpio.pullUpDown(2);
-    } else if (pinConfig.pull === "down") {
-      gpio.pullUpDown(1);
-    } else {
-      gpio.pullUpDown(0);
-    }
+    // Pull-up/down
+    if (pinConfig.pull === "up") gpio.pullUpDown(2);
+    else if (pinConfig.pull === "down") gpio.pullUpDown(1);
+    else gpio.pullUpDown(0);
 
-    // Debounce (in microseconds)
     const debounceMicros = (pinConfig.debounce || 50) * 1000;
 
     if (pinConfig.type === "BUTTON") {
-      this.log(`[MMM-GPIO-Notifications2] Setting up BUTTON on GPIO ${pinConfig.pin}`);
+      this.log(`[MMM-GPIO-Notifications2] Setup BUTTON GPIO ${pinConfig.pin}`);
 
       let pressStart = null;
-      let longPressTimer = null;
-      let veryLongPressTimer = null;
-      let pressType = null; // which type has already fired
-      let multiPressCount = 0;
+      let pressCount = 0;
       let multiPressTimer = null;
+      let released = true;
 
-      const multiPressTimeout = pinConfig.multiPressTimeout || 400; // ms
+      let checkTimer = null;
 
-      gpio.notify((level, tick) => {
+      gpio.notify((level) => {
         if (level === 1) {
-          // Rising edge → button pressed
-          pressStart = tick;
-          pressType = null;
+          // Button pressed
+          if (!released) return; // ignore spurious press while already pressed
 
-          // Schedule longPress
-          if (pinConfig.notifications?.longPress) {
-            longPressTimer = setTimeout(() => {
-              if (!pressType) {
-                pressType = "longPress";
-                this.sendSocketNotification("GPIO_NOTIFICATION", {
-                  pin: pinConfig.pin,
-                  type: "longPress",
-                  notification: pinConfig.notifications.longPress,
-                  payload: pinConfig.payload || {}
-                });
-                this.log(`[MMM-GPIO-Notifications2] Button ${pinConfig.pin} → longPress, sent: ${pinConfig.notifications.longPress}`);
-              }
-            }, pinConfig.longPress || 2500);
-          }
+          pressStart = Date.now();
+          released = false;
 
-          // Schedule veryLongPress
-          if (pinConfig.notifications?.veryLongPress) {
-            veryLongPressTimer = setTimeout(() => {
-              clearTimeout(longPressTimer);
-              if (pressType !== "veryLongPress") {
-                pressType = "veryLongPress";
-                this.sendSocketNotification("GPIO_NOTIFICATION", {
-                  pin: pinConfig.pin,
-                  type: "veryLongPress",
-                  notification: pinConfig.notifications.veryLongPress,
-                  payload: pinConfig.payload || {}
-                });
-                this.log(`[MMM-GPIO-Notifications2] Button ${pinConfig.pin} → veryLongPress, sent: ${pinConfig.notifications.veryLongPress}`);
-              }
-            }, pinConfig.veryLongPress || 6000);
-          }
+          // start monitoring
+          checkTimer = setInterval(() => {
+            if (released || !pressStart) return;
+            const elapsed = Date.now() - pressStart;
 
-        } else if (level === 0 && pressStart !== null) {
-          // Falling edge → button released
-          const durationMs = ((tick >>> 0) - (pressStart >>> 0)) / 1000;
+            if (pinConfig.veryLongPress && elapsed >= pinConfig.veryLongPress) {
+              // Fire veryLong once, cancel everything else
+              this.fireNotification(pinConfig, "veryLongPress");
+              this.log(`[MMM-GPIO-Notifications2] pin ${pinConfig.pin} → veryLongPress fired`);
+              clearInterval(checkTimer);
+              checkTimer = null;
+              pressStart = null;
+              released = true; // lock out release
+            }
+          }, 100);
+
+        } else if (level === 0) {
+          // Button released
+          if (released) return; // ignore bounce
+
+          released = true;
+          const ms = Date.now() - pressStart;
           pressStart = null;
 
-          clearTimeout(longPressTimer);
-          clearTimeout(veryLongPressTimer);
+          if (checkTimer) {
+            clearInterval(checkTimer);
+            checkTimer = null;
+          }
 
-          // If nothing triggered yet → handle short/double/triple press
-          if (!pressType && durationMs >= 50) {
-            multiPressCount++;
-            clearTimeout(multiPressTimer);
+          this.log(`[MMM-GPIO-Notifications2] pin ${pinConfig.pin} released after ${ms} ms`);
+
+          if (ms < 30) {
+            this.log(`[MMM-GPIO-Notifications2] Ignored bounce on pin ${pinConfig.pin}`);
+            return;
+          }
+
+          // Decide which press type
+          if (pinConfig.veryLongPress && ms >= pinConfig.veryLongPress) {
+            // already fired inside interval
+            return;
+          } else if (pinConfig.longPress && ms >= pinConfig.longPress) {
+            this.fireNotification(pinConfig, "longPress");
+            this.log(`[MMM-GPIO-Notifications2] pin ${pinConfig.pin} → longPress fired`);
+          } else {
+            // multi press logic
+            pressCount++;
+            if (multiPressTimer) clearTimeout(multiPressTimer);
+
             multiPressTimer = setTimeout(() => {
-              if (multiPressCount === 1 && pinConfig.notifications?.shortPress) {
-                this.sendSocketNotification("GPIO_NOTIFICATION", {
-                  pin: pinConfig.pin,
-                  type: "shortPress",
-                  notification: pinConfig.notifications.shortPress,
-                  payload: pinConfig.payload || {}
-                });
-                this.log(`[MMM-GPIO-Notifications2] Button ${pinConfig.pin} → shortPress, sent: ${pinConfig.notifications.shortPress}`);
-              } else if (multiPressCount === 2 && pinConfig.notifications?.doublePress) {
-                this.sendSocketNotification("GPIO_NOTIFICATION", {
-                  pin: pinConfig.pin,
-                  type: "doublePress",
-                  notification: pinConfig.notifications.doublePress,
-                  payload: pinConfig.payload || {}
-                });
-                this.log(`[MMM-GPIO-Notifications2] Button ${pinConfig.pin} → doublePress, sent: ${pinConfig.notifications.doublePress}`);
-              } else if (multiPressCount >= 3 && pinConfig.notifications?.triplePress) {
-                this.sendSocketNotification("GPIO_NOTIFICATION", {
-                  pin: pinConfig.pin,
-                  type: "triplePress",
-                  notification: pinConfig.notifications.triplePress,
-                  payload: pinConfig.payload || {}
-                });
-                this.log(`[MMM-GPIO-Notifications2] Button ${pinConfig.pin} → triplePress, sent: ${pinConfig.notifications.triplePress}`);
+              if (pressCount === 1) {
+                this.fireNotification(pinConfig, "shortPress");
+                this.log(`[MMM-GPIO-Notifications2] pin ${pinConfig.pin} → decided shortPress`);
+              } else if (pressCount === 2) {
+                this.fireNotification(pinConfig, "doublePress");
+                this.log(`[MMM-GPIO-Notifications2] pin ${pinConfig.pin} → decided doublePress`);
+              } else if (pressCount >= 3) {
+                this.fireNotification(pinConfig, "triplePress");
+                this.log(`[MMM-GPIO-Notifications2] pin ${pinConfig.pin} → decided triplePress`);
               }
-              multiPressCount = 0;
-            }, multiPressTimeout);
+              pressCount = 0;
+            }, pinConfig.multiPressTimeout || 400);
           }
         }
       }, pigpio.EITHER_EDGE, debounceMicros);
     }
 
     if (pinConfig.type === "PIR") {
-      this.log(`[MMM-GPIO-Notifications2] Setting up PIR on GPIO ${pinConfig.pin}`);
+      this.log(`[MMM-GPIO-Notifications2] Setup PIR GPIO ${pinConfig.pin}`);
 
       gpio.notify((level) => {
         const notif = level === 1 ? pinConfig.notifications.motionOn : pinConfig.notifications.motionOff;
         if (notif) {
-          this.sendSocketNotification("GPIO_NOTIFICATION", {
-            pin: pinConfig.pin,
-            type: "motion",
-            notification: notif,
-            payload: pinConfig.payload || {}
-          });
-          this.log(`[MMM-GPIO-Notifications2] PIR ${pinConfig.pin} → ${notif}`);
+          this.sendOut(pinConfig, notif, "motion");
         }
       }, pigpio.EITHER_EDGE, debounceMicros);
     }
+  },
+
+  fireNotification: function (pinConfig, type) {
+    const notif = pinConfig.notifications?.[type];
+    if (!notif) return;
+
+    if (Array.isArray(notif)) {
+      notif.forEach((n) => this.sendOut(pinConfig, n, type));
+    } else {
+      this.sendOut(pinConfig, notif, type);
+    }
+  },
+
+  // ������ FIXED: properly handle primitive payloads (numbers, strings, booleans, etc.)
+  sendOut: function (pinConfig, notif, type) {
+    if (!notif) return;
+
+    let notification, payload;
+
+    if (typeof notif === "string") {
+      notification = notif;
+      payload = pinConfig.payload || {};
+    } else if (typeof notif === "object" && notif.notification) {
+      notification = notif.notification;
+
+      if (typeof notif.payload === "object" && notif.payload !== null) {
+        // Merge objects
+        payload = Object.assign({}, pinConfig.payload || {}, notif.payload);
+      } else if (notif.payload !== undefined) {
+        // Primitive payload (number, string, boolean, etc.)
+        payload = notif.payload;
+      } else {
+        payload = pinConfig.payload || {};
+      }
+    }
+
+    this.sendSocketNotification("GPIO_NOTIFICATION", {
+      pin: pinConfig.pin,
+      type,
+      notification,
+      payload,
+    });
+
+    this.log(`[MMM-GPIO-Notifications2] Button ${pinConfig.pin} → ${type}, sent: ${notification}`, payload);
   },
 
   log: function (...args) {
