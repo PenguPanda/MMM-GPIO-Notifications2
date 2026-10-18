@@ -3,7 +3,31 @@
  */
 
 const NodeHelper = require("node_helper");
-const pigpio = require("pigpio-client");
+const fs = require("node:fs");
+const { execFileSync } = require("node:child_process");
+
+function detectPi5() {
+  try {
+    const model = fs.readFileSync(
+      "/proc/device-tree/model", "utf8"
+    ).replace(/\0/g, "");
+    if (/Raspberry Pi 5/i.test(model)) return true;
+  } catch {}
+
+  try {
+    const chips = execFileSync("gpiodetect", {
+      encoding: "utf8", timeout: 2000
+    });
+    return /^\S+\s+\[pinctrl-rp1\]/m.test(chips);
+  } catch {}
+
+  return false;
+}
+
+const isPi5 = detectPi5();
+const pigpio = isPi5
+  ? require("./pi5-gpio-adapter")
+  : require("pigpio-client");
 
 module.exports = NodeHelper.create({
   start: function () {
@@ -20,11 +44,11 @@ module.exports = NodeHelper.create({
   setupGPIO: function () {
     const { host, port, pins } = this.config;
 
-    this.log("[MMM-GPIO-Notifications2] Connecting to pigpiod…");
+    this.log("[MMM-GPIO-Notifications2] Starting " + (isPi5 ? "Pi 5 GPIO (libgpiod)" : "Pi 4 GPIO (pigpio-client/pigpiod)") + "…");
     this.client = pigpio.pigpio({ host, port });
 
     this.client.once("connected", (info) => {
-      this.log("[MMM-GPIO-Notifications2] Connected to pigpiod:", info);
+      this.log("[MMM-GPIO-Notifications2] Connected to " + (isPi5 ? "Pi 5 GPIO" : "pigpiod") + ":", info);
 
       pins.forEach((pinConfig) => {
         this.setupPin(pinConfig);
@@ -32,7 +56,7 @@ module.exports = NodeHelper.create({
     });
 
     this.client.once("error", (err) => {
-      this.error("Unable to connect to pigpiod:", err);
+      this.error(isPi5 ? "Pi 5 GPIO error:" : "Unable to connect to pigpiod:", err);
     });
   },
 
