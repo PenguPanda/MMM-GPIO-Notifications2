@@ -135,10 +135,6 @@ debounce values, notification names and payloads as required.
 }
 ```
 
-The `debounce` values above are examples, not recommended replacements
-for your existing settings. This release does not change your live
-configuration.
-
 `multiPressTimeout` controls the time window for grouping successive
 button presses; it defaults to 400 milliseconds. The notification
 names `doublePress` and `triplePress` identify the resulting events.
@@ -165,11 +161,6 @@ Button notification types:
 - `doublePress`
 - `triplePress`
 
-PIR notification types:
-
-- `motionOn`
-- `motionOff`
-
 Each notification can be a string or an object containing a
 `notification` name and an optional `payload`. Per-notification object
 payloads are merged with the pin-wide payload.
@@ -182,8 +173,6 @@ payloads are merged with the pin-wide payload.
 3. On Pi 5, confirm `gpiodetect` identifies the RP1 GPIO controller.
 4. Check GPIO device permissions and ensure another process is not
    holding the requested lines.
-5. With no hardware attached, verify backend detection and initialization
-   only. Physical button and PIR events require connected hardware.
 
 ## License
 
