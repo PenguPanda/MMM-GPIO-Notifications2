@@ -157,12 +157,63 @@ module.exports = NodeHelper.create({
     if (pinConfig.type === "PIR") {
       this.log(`[MMM-GPIO-Notifications2] Setup PIR GPIO ${pinConfig.pin}`);
 
-      gpio.notify((level) => {
-        const notif = level === 1 ? pinConfig.notifications.motionOn : pinConfig.notifications.motionOff;
-        if (notif) {
+      const repeatMs = 10000;
+      const edgeDebounceMs = 50;
+      let active = false;
+      let repeatTimer = null;
+      let edgeTimer = null;
+      let pendingLevel = null;
+      let lastMotionOnAt = 0;
+
+      const sendMotion = (notif) => {
+        if (!notif) return;
+        if (Array.isArray(notif)) {
+          notif.forEach((entry) => this.sendOut(pinConfig, entry, "motion"));
+        } else {
           this.sendOut(pinConfig, notif, "motion");
         }
-      }, pigpio.EITHER_EDGE, debounceMicros);
+      };
+
+      const scheduleRepeat = () => {
+        if (repeatTimer) clearTimeout(repeatTimer);
+        if (!active || !pinConfig.notifications?.motionOn) return;
+        const remaining = Math.max(0, repeatMs - (Date.now() - lastMotionOnAt));
+        repeatTimer = setTimeout(() => {
+          repeatTimer = null;
+          if (!active) return;
+          sendMotion(pinConfig.notifications.motionOn);
+          lastMotionOnAt = Date.now();
+          scheduleRepeat();
+        }, remaining);
+      };
+
+      const handleLevel = (level) => {
+        if (level === 1) {
+          if (active) return;
+          active = true;
+          if (lastMotionOnAt === 0 || Date.now() - lastMotionOnAt >= repeatMs) {
+            sendMotion(pinConfig.notifications?.motionOn);
+            lastMotionOnAt = Date.now();
+          }
+          scheduleRepeat();
+        } else if (level === 0) {
+          const wasActive = active;
+          active = false;
+          if (repeatTimer) clearTimeout(repeatTimer);
+          repeatTimer = null;
+          if (wasActive) sendMotion(pinConfig.notifications?.motionOff);
+        }
+      };
+
+      gpio.notify((level) => {
+        if (level !== 0 && level !== 1) return;
+        pendingLevel = level;
+        if (edgeTimer) clearTimeout(edgeTimer);
+        edgeTimer = setTimeout(() => {
+          edgeTimer = null;
+          handleLevel(pendingLevel);
+        }, edgeDebounceMs);
+      }, pigpio.EITHER_EDGE, 0);
     }
   },
 
