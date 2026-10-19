@@ -53,6 +53,36 @@ module.exports = NodeHelper.create({
       pins.forEach((pinConfig) => {
         this.setupPin(pinConfig);
       });
+
+      // Wake the display on startup only when a PIR is configured for SCREEN_ON.
+      const findScreenOn = (notif) => {
+        if (notif === "SCREEN_ON") return notif;
+        if (Array.isArray(notif)) {
+          return notif.find((entry) =>
+            entry === "SCREEN_ON" ||
+            (entry && typeof entry === "object" && entry.notification === "SCREEN_ON")
+          ) || null;
+        }
+        if (notif && typeof notif === "object" && notif.notification === "SCREEN_ON") {
+          return notif;
+        }
+        return null;
+      };
+
+      const startupScreenPin = pins.find((pinConfig) =>
+        pinConfig.type === "PIR" &&
+        findScreenOn(pinConfig.notifications?.motionOn)
+      );
+
+      if (startupScreenPin) {
+        const startupNotif = findScreenOn(
+          startupScreenPin.notifications.motionOn
+        );
+        setTimeout(() => {
+          this.log("[MMM-GPIO-Notifications2] Sending startup SCREEN_ON via PIR GPIO " + startupScreenPin.pin);
+          this.sendOut(startupScreenPin, startupNotif, "startup");
+        }, 500);
+      }
     });
 
     this.client.once("error", (err) => {
